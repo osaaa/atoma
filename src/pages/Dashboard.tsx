@@ -45,20 +45,26 @@ export default function Dashboard() {
   }, [navigate]); // Runs once when page loads. [navigate] tells React to re-run if navigate
   // changes (which it won't, but keeps linter happy)
 
-  useEffect(() => {
-    fetchHabits();
-  }, []);
-
   const fetchHabits = async () => {
     setLoading(true);
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      setLoading(false);
+      return;
+    }
 
     const { data, error } = await supabase
       .from("habits")
       .select("*")
+      .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
     if (error) {
-      console.log("Eroor fetching Habits: ", error);
+      console.log("Error fetching Habits: ", error);
     } else {
       setHabits(data || []); //store in state
     }
@@ -66,13 +72,26 @@ export default function Dashboard() {
     setLoading(false);
   };
 
+  useEffect(() => {
+    fetchHabits();
+  }, []);
+
   //CREATE: add new habit
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      alert("You must be logged in to create a habit");
+      return;
+    }
+
     const { data, error } = await supabase
       .from("habits")
-      .insert([formData])
+      .insert([{ ...formData, user_id: user.id }])
       .select();
 
     if (error) {
@@ -106,7 +125,7 @@ export default function Dashboard() {
   };
 
   //DELETE: Remove habit
-  const handleDelete = async (e: React.FormEvent) => {
+  const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this habit?")) return;
 
     const { error } = await supabase.from("habits").delete().eq("id", id);
