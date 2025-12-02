@@ -29,7 +29,7 @@ export default function HabitForm({
   };
 
   return (
-    <div className="mb-6 p-6 bg-slate-300/30 rounded-lg">
+    <div className="mb-6 p-6 bg-slate-300/30 rounded-xl shadow-xl/20">
       <h2 className="text-xl font-bold mb-4 text-indigo-500">
         {editingId ? "Edit Habit" : "Create New Habit"}
       </h2>
@@ -42,7 +42,7 @@ export default function HabitForm({
             onChange={(e) =>
               setFormData({ ...formData, title: e.target.value })
             }
-            className="w-full p-2 bg-slate-700 rounded border border-slate-600"
+            className="w-full p-2 bg-slate-700/30 rounded border border-slate-600"
             required
           />
         </div>
@@ -54,7 +54,7 @@ export default function HabitForm({
             onChange={(e) =>
               setFormData({ ...formData, description: e.target.value })
             }
-            className="w-full p-2 bg-slate-700 rounded border border-slate-600"
+            className="w-full p-2 bg-slate-700/30 rounded border border-slate-600"
             rows={3}
           />
         </div>
@@ -66,7 +66,7 @@ export default function HabitForm({
             onChange={(e) =>
               setFormData({ ...formData, frequency: e.target.value })
             }
-            className="w-full p-2 bg-slate-700 rounded border border-slate-600"
+            className="w-full p-2 bg-slate-700/30 rounded border border-slate-600"
             required
           >
             <option value="daily">Daily</option>
