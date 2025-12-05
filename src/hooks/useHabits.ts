@@ -5,241 +5,119 @@ import supabase from "../lib/supabaseClient";
 // TYPE DEFINITIONS
 // ============================================================================
 
-// Habit represents a single habit in the database
 type Habit = {
-  id: string; // Unique identifier (UUID)
-  title: string; // Habit name (e.g., "Morning Run")
-  description: string | null; // Optional details about the habit
-  frequency: string; // How often: "daily", "weekly", or "monthly"
-  created_at: string; // When habit was created (timestamp)
-  user_id: string; // Who owns this habit (UUID)
-  streak?: number; // Current streak in days (calculated, not stored in DB)
+  id: string;
+  title: string;
+  description: string | null;
+  frequency: string;
+  created_at: string;
+  user_id: string;
+  current_streak: number; // ✨ Stored in database!
+  last_completed: string | null; // ✨ Last completion date
 };
 
-// HabitLog represents a single completion entry
 type HabitLog = {
-  id: string; // Unique identifier for the log
-  habit_id: string; // Which habit was completed
-  user_id: string; // Who completed it
-  completed_date: string; // Date it was completed (format: "YYYY-MM-DD")
+  id: string;
+  habit_id: string;
+  user_id: string;
+  completed_date: string;
 };
 
 // ============================================================================
-// MAIN HOOK
+// ULTRA-OPTIMIZED HOOK
+// No loops, no calculations, just simple queries!
 // ============================================================================
 
 export function useHabits(currentUserId: string | null) {
-  // STATE: Store all habits for the current user
   const [habits, setHabits] = useState<Habit[]>([]);
-
-  // STATE: Store today's completion logs
   const [habitLogs, setHabitLogs] = useState<HabitLog[]>([]);
-
-  // STATE: Store ALL logs (for streak calculation) - cached in memory
-  const [allLogs, setAllLogs] = useState<HabitLog[]>([]);
-
-  // STATE: Track loading state (true while fetching from database)
   const [loading, setLoading] = useState(true);
 
   // ==========================================================================
-  // FETCH FUNCTIONS
+  // FETCH FUNCTIONS - SUPER SIMPLE!
   // ==========================================================================
 
   /**
-   * Fetch ALL logs for this user to calculate streaks
-   * This gets the entire history, not just today
-   * We store this in state so we don't need to re-fetch it constantly
+   * Fetch habits - streaks already stored in database!
+   * No calculation needed, just SELECT and done!
    */
-  const fetchAllLogs = useCallback(async () => {
-    if (!currentUserId) return [];
+  const fetchHabits = useCallback(async () => {
+    if (!currentUserId) return;
 
+    setLoading(true);
+
+    // ✨ Just fetch habits - streaks are already there!
     const { data, error } = await supabase
-      .from("habit_logs")
-      .select("*")
+      .from("habits")
+      .select("*") // Includes current_streak and last_completed
       .eq("user_id", currentUserId)
-      .order("completed_date", { ascending: false }); // Newest first
+      .order("created_at", { ascending: false });
 
     if (error) {
-      console.error("Error fetching all logs:", error);
-      return [];
+      console.error("Error fetching habits:", error);
+    } else {
+      setHabits(data || []);
     }
 
-    const logs = data || [];
-    setAllLogs(logs); // Cache in state
-    return logs;
+    setLoading(false);
   }, [currentUserId]);
 
   /**
-   * Fetch only TODAY'S logs
-   * Used to check if habits are completed today (for checkmarks)
+   * Fetch today's logs for checkmarks
+   * Small dataset, very fast
    */
   const fetchTodaysLogs = useCallback(async () => {
-    const today = new Date().toISOString().split("T")[0]; // Format: "YYYY-MM-DD"
-
     if (!currentUserId) return;
+
+    const today = new Date().toISOString().split("T")[0];
 
     const { data, error } = await supabase
       .from("habit_logs")
       .select("*")
       .eq("user_id", currentUserId)
-      .eq("completed_date", today); // Only get logs for TODAY
+      .eq("completed_date", today);
 
     if (error) {
       console.error("Error fetching today's logs:", error);
     } else {
-      setHabitLogs(data || []); // Store in state
+      setHabitLogs(data || []);
     }
   }, [currentUserId]);
 
-  /**
-   * Calculate streak for a specific habit
-   * Counts consecutive days from today backwards
-   *
-   * Example:
-   * - Completed: Dec 2, Dec 1, Nov 30, Nov 29
-   * - Today is Dec 2
-   * - Streak = 4 days
-   *
-   * If you miss Nov 28, streak stops at 4 (doesn't count earlier days)
-   */
-  const calculateStreak = useCallback(
-    (habitId: string, logs: HabitLog[]): number => {
-      // Filter logs for this specific habit
-      const habitLogs = logs
-        .filter((log) => log.habit_id === habitId)
-        .map((log) => log.completed_date) // Extract just the dates
-        .sort() // Sort oldest to newest
-        .reverse(); // Reverse to newest first
-
-      // If no logs, streak is 0
-      if (habitLogs.length === 0) return 0;
-
-      let streak = 0; // Counter for consecutive days
-      const checkDate = new Date(); // Start from today
-      checkDate.setHours(0, 0, 0, 0); // Reset to midnight (ignore time)
-
-      // Loop through logs and count consecutive days
-      for (let i = 0; i < habitLogs.length; i++) {
-        // Convert log date string to Date object
-        const logDate = new Date(habitLogs[i] + "T00:00:00");
-
-        // Calculate how many days ago this log was
-        // If streak = 0, we're checking today (0 days ago)
-        // If streak = 1, we're checking yesterday (1 day ago)
-        const daysDiff = Math.floor(
-          (checkDate.getTime() - logDate.getTime()) / (1000 * 60 * 60 * 24)
-        );
-
-        // If this log is for the expected date (streak days ago)
-        if (daysDiff === streak) {
-          streak++; // Increment streak and check next day
-        } else {
-          // Found a gap! Streak is broken, stop counting
-          break;
-        }
-      }
-
-      return streak;
-    },
-    []
-  );
-
-  /**
-   * Fetch all habits for this user AND calculate their streaks
-   * This is the main function that combines habits with their streak data
-   */
-  const fetchHabitsAndCalculateStreaks = useCallback(async () => {
-    setLoading(true); // Show loading indicator
-
-    // Make sure user is logged in
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      setLoading(false);
-      return;
-    }
-
-    // Fetch habits from database
-    const { data: habitsData, error: habitsError } = await supabase
-      .from("habits")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false }); // Newest first
-
-    if (habitsError) {
-      console.error("Error fetching habits:", habitsError);
-      setLoading(false);
-      return;
-    }
-
-    // Fetch ALL logs to calculate streaks (also caches in state)
-    const logs = await fetchAllLogs();
-
-    // Add streak to each habit
-    const habitsWithStreaks = (habitsData || []).map((habit) => ({
-      ...habit, // Keep all existing habit data
-      streak: calculateStreak(habit.id, logs), // Add calculated streak
-    }));
-
-    setHabits(habitsWithStreaks); // Store in state
-    setLoading(false); // Hide loading indicator
-  }, [fetchAllLogs, calculateStreak]);
-
-  /**
-   * Recalculate streaks WITHOUT re-fetching from database
-   * Uses cached allLogs data for instant updates
-   * This prevents the flickering/reload effect
-   */
-  const recalculateStreaks = useCallback(
-    (updatedLogs: HabitLog[]) => {
-      setHabits((currentHabits) =>
-        currentHabits.map((habit) => ({
-          ...habit,
-          streak: calculateStreak(habit.id, updatedLogs),
-        }))
-      );
-    },
-    [calculateStreak]
-  );
-
   // ==========================================================================
-  // RUN ON COMPONENT MOUNT / USER CHANGE
+  // INITIAL LOAD
   // ==========================================================================
 
   useEffect(() => {
     if (currentUserId) {
-      fetchHabitsAndCalculateStreaks(); // Get habits with streaks
-      fetchTodaysLogs(); // Get today's completions
+      fetchHabits();
+      fetchTodaysLogs();
     }
-  }, [currentUserId, fetchHabitsAndCalculateStreaks, fetchTodaysLogs]);
+  }, [currentUserId, fetchHabits, fetchTodaysLogs]);
 
   // ==========================================================================
   // HELPER FUNCTIONS
   // ==========================================================================
 
-  /**
-   * Check if a specific habit is completed TODAY
-   * Returns true if there's a log entry for this habit in today's logs
-   */
   const isCompletedToday = (habitId: string): boolean => {
     return habitLogs.some((log) => log.habit_id === habitId);
   };
 
   // ==========================================================================
-  // CRUD OPERATIONS - OPTIMIZED FOR INSTANT UI UPDATES
+  // CRUD OPERATIONS
   // ==========================================================================
 
   /**
-   * CREATE: Mark a habit as complete for today
-   * Inserts a new log entry in the database
-   * OPTIMIZED: Updates local state immediately, no full refetch
+   * Mark habit as complete
+   * Database trigger automatically updates streak!
+   * We just insert the log and refetch
    */
   const handleMarkComplete = async (habitId: string) => {
-    const today = new Date().toISOString().split("T")[0]; // "YYYY-MM-DD"
+    if (!currentUserId) return;
 
-    // Insert new completion log
+    const today = new Date().toISOString().split("T")[0];
+
+    // Insert log - trigger will update streak automatically!
     const { data, error } = await supabase
       .from("habit_logs")
       .insert([
@@ -249,42 +127,36 @@ export function useHabits(currentUserId: string | null) {
           completed_date: today,
         },
       ])
-      .select(); // Return the inserted row
+      .select();
 
     if (error) {
-      // Error code 23505 = unique constraint violation
-      // This means the habit was already completed today
       if (error.code === "23505") {
         alert("You've already completed this habit today!");
       } else {
         console.error("Error logging habit:", error);
         alert("Failed to log habit completion");
       }
-    } else {
-      // ✨ INSTANT UPDATE - No database refetch!
-      const newLog = data[0];
-
-      // Update today's logs (for checkmarks)
-      setHabitLogs((current) => [...current, newLog]);
-
-      // Update all logs cache (for streak calculation)
-      const updatedAllLogs = [newLog, ...allLogs];
-      setAllLogs(updatedAllLogs);
-
-      // Recalculate streaks instantly using cached data
-      recalculateStreaks(updatedAllLogs);
+      return;
     }
+
+    // Update local state for instant feedback
+    setHabitLogs((current) => [...current, data[0]]);
+
+    // Refetch habits to get updated streak
+    // (Trigger already updated it in database)
+    await fetchHabits();
   };
 
   /**
-   * DELETE: Remove today's completion (undo)
-   * Deletes the log entry for today
-   * OPTIMIZED: Updates local state immediately, no full refetch
+   * Unmark habit
+   * Database trigger automatically decreases streak!
    */
   const handleUnmarkComplete = async (habitId: string) => {
+    if (!currentUserId) return;
+
     const today = new Date().toISOString().split("T")[0];
 
-    // Delete the log for this habit + user + today
+    // Delete log - trigger will decrease streak automatically!
     const { error } = await supabase
       .from("habit_logs")
       .delete()
@@ -294,63 +166,55 @@ export function useHabits(currentUserId: string | null) {
 
     if (error) {
       console.error("Error removing log:", error);
-    } else {
-      // ✨ INSTANT UPDATE - No database refetch!
-
-      // Remove from today's logs (for checkmarks)
-      setHabitLogs((current) =>
-        current.filter((log) => log.habit_id !== habitId)
-      );
-
-      // Remove from all logs cache (for streak calculation)
-      const updatedAllLogs = allLogs.filter(
-        (log) => !(log.habit_id === habitId && log.completed_date === today)
-      );
-      setAllLogs(updatedAllLogs);
-
-      // Recalculate streaks instantly using cached data
-      recalculateStreaks(updatedAllLogs);
+      return;
     }
+
+    // Update local state for instant feedback
+    setHabitLogs((current) =>
+      current.filter((log) => log.habit_id !== habitId)
+    );
+
+    // Refetch habits to get updated streak
+    await fetchHabits();
   };
 
   /**
-   * CREATE: Add a new habit
-   * Inserts a new habit in the database
+   * Create new habit
+   * Starts with streak = 0, last_completed = null
    */
   const handleCreate = async (formData: {
     title: string;
     description: string;
     frequency: string;
   }) => {
-    // Make sure user is logged in
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
+    if (!currentUserId) {
       alert("You must be logged in to create a habit");
       return;
     }
 
-    // Insert new habit with user_id
     const { data, error } = await supabase
       .from("habits")
-      .insert([{ ...formData, user_id: user.id }])
-      .select(); // Return the created habit
+      .insert([
+        {
+          ...formData,
+          user_id: currentUserId,
+          current_streak: 0,
+          last_completed: null,
+        },
+      ])
+      .select();
 
     if (error) {
       console.error("Error creating habit:", error);
       alert("Failed to create habit");
     } else {
-      // Add new habit to the top of the list with streak = 0
-      const newHabit = { ...data[0], streak: 0 };
-      setHabits([newHabit, ...habits]);
+      setHabits([data[0], ...habits]);
     }
   };
 
   /**
-   * UPDATE: Edit an existing habit
-   * Updates habit title, description, or frequency
+   * Update habit details
+   * Streak data doesn't change
    */
   const handleUpdate = async (
     editingId: string,
@@ -360,33 +224,27 @@ export function useHabits(currentUserId: string | null) {
       frequency: string;
     }
   ) => {
-    // Update the habit in database
     const { data, error } = await supabase
       .from("habits")
       .update(formData)
       .eq("id", editingId)
-      .select(); // Return updated habit
+      .select();
 
     if (error) {
       console.error("Error updating habit:", error);
       alert("Failed to update habit");
     } else {
-      // Replace old habit with updated one in state
-      // Keep the existing streak (it doesn't change when editing details)
       setHabits((current) =>
-        current.map((h) =>
-          h.id === editingId ? { ...data[0], streak: h.streak } : h
-        )
+        current.map((h) => (h.id === editingId ? data[0] : h))
       );
     }
   };
 
   /**
-   * DELETE: Remove a habit (and all its logs)
-   * Thanks to ON DELETE CASCADE, logs are automatically deleted too
+   * Delete habit
+   * CASCADE removes logs automatically
    */
   const handleDelete = async (id: string) => {
-    // Confirm before deleting (prevent accidents)
     if (
       !confirm(
         "Are you sure? This will delete the habit and all completion logs."
@@ -394,34 +252,29 @@ export function useHabits(currentUserId: string | null) {
     )
       return;
 
-    // Delete the habit
     const { error } = await supabase.from("habits").delete().eq("id", id);
 
     if (error) {
       console.error("Error deleting habit:", error);
       alert("Failed to delete habit");
     } else {
-      // Remove from state
       setHabits((current) => current.filter((h) => h.id !== id));
-
-      // Also remove its logs from cache
       setHabitLogs((current) => current.filter((log) => log.habit_id !== id));
-      setAllLogs((current) => current.filter((log) => log.habit_id !== id));
     }
   };
 
   // ==========================================================================
-  // RETURN (What this hook provides to components)
+  // RETURN API
   // ==========================================================================
 
   return {
-    habits, // Array of habits with streaks
-    loading, // True while fetching data
-    isCompletedToday, // Function: Check if habit completed today
-    handleMarkComplete, // Function: Mark habit as complete (OPTIMIZED)
-    handleUnmarkComplete, // Function: Undo completion (OPTIMIZED)
-    handleCreate, // Function: Create new habit
-    handleUpdate, // Function: Edit existing habit
-    handleDelete, // Function: Delete habit
+    habits, // Habits with streaks already calculated!
+    loading,
+    isCompletedToday,
+    handleMarkComplete, // Streak updates automatically via trigger
+    handleUnmarkComplete, // Streak updates automatically via trigger
+    handleCreate,
+    handleUpdate,
+    handleDelete,
   };
 }
