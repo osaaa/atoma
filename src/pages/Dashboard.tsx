@@ -13,8 +13,9 @@ type Habit = {
   description: string | null;
   frequency: string;
   created_at: string;
-  streak?: number;
-  isDueToday?: boolean;
+  user_id: string;
+  current_streak: number;
+  last_completed: string | null;
 };
 
 export default function Dashboard() {
@@ -158,10 +159,10 @@ export default function Dashboard() {
   const progressPercent =
     totalToday > 0 ? (completedToday / totalToday) * 100 : 0;
 
-  // Find best streak (assuming your useHabits hook includes streak data)
+  // Find best streak
   const bestStreak =
-    habits.length > 0 ? Math.max(...habits.map((h) => h.streak || 0)) : 0;
-  const bestStreakHabit = habits.find((h) => h.streak === bestStreak);
+    habits.length > 0 ? Math.max(...habits.map((h) => h.current_streak)) : 0;
+  const bestStreakHabit = habits.find((h) => h.current_streak === bestStreak);
 
   return (
     <div className="min-h-screen p-4">

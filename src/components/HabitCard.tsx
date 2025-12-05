@@ -14,7 +14,9 @@ type Habit = {
   description: string | null; // Optional details about the habit
   frequency: string; // How often: "daily", "weekly", or "monthly"
   created_at: string; // When habit was created (timestamp)
-  streak?: number; // ADDED: Current streak in days (optional)
+  user_id: string; // Who owns this habit
+  current_streak: number; // Current streak in days (from database)
+  last_completed: string | null; // Last completion date
 };
 
 /**
@@ -112,9 +114,10 @@ export default function HabitCard({
             {/* Streak Indicator (conditional) */}
             {/* If streak exists AND is greater than 0, show fire emoji + count */}
             {/* If no streak or streak is 0, show motivational message */}
-            {habit.streak !== undefined && habit.streak > 0 ? (
+            {habit.current_streak > 0 ? (
               <span className="text-sm font-medium">
-                🔥 {habit.streak} day{habit.streak !== 1 ? "s" : ""} streak
+                🔥 {habit.current_streak} day
+                {habit.current_streak !== 1 ? "s" : ""} streak
                 {/* Pluralization: "1 day" vs "2 days" */}
               </span>
             ) : (
